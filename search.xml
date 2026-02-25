@@ -2,7 +2,7 @@
 <search>
   <entry>
     <title>别再写面条代码了：搜广推系统中的动态图编排设计与演进</title>
-    <url>/blog-tangjing/blog-tangjing.github.io.git/2025/09/24/%E5%88%AB%E5%86%8D%E5%86%99%E9%9D%A2%E6%9D%A1%E4%BB%A3%E7%A0%81%E4%BA%86%EF%BC%9A%E6%90%9C%E5%B9%BF%E6%8E%A8%E7%B3%BB%E7%BB%9F%E4%B8%AD%E7%9A%84%E5%8A%A8%E6%80%81%E5%9B%BE%E7%BC%96%E6%8E%92%E8%AE%BE%E8%AE%A1%E4%B8%8E%E6%BC%94%E8%BF%9B/</url>
+    <url>/2025/09/24/%E5%88%AB%E5%86%8D%E5%86%99%E9%9D%A2%E6%9D%A1%E4%BB%A3%E7%A0%81%E4%BA%86%EF%BC%9A%E6%90%9C%E5%B9%BF%E6%8E%A8%E7%B3%BB%E7%BB%9F%E4%B8%AD%E7%9A%84%E5%8A%A8%E6%80%81%E5%9B%BE%E7%BC%96%E6%8E%92%E8%AE%BE%E8%AE%A1%E4%B8%8E%E6%BC%94%E8%BF%9B/</url>
     <content><![CDATA[<p>以前做搜索模块，我最怕接手别人留下的代码。</p>
 <p>点开 <code>SearchServiceImpl.java</code>，里面一个 <code>search()</code> 方法一千多行。代码里密密麻麻充斥着这种逻辑：</p>
 <figure class="highlight java"><table><tr><td class="code"><pre><span class="line">List&lt;Item&gt; results = <span class="keyword">new</span> <span class="title class_">ArrayList</span>&lt;&gt;();</span><br><span class="line"><span class="comment">// 先搞点向量召回</span></span><br><span class="line">results.addAll(vectorRecall.search(req));</span><br><span class="line"></span><br><span class="line"><span class="comment">// 要是结果不够，再补点热门</span></span><br><span class="line"><span class="keyword">if</span> (results.size() &lt; <span class="number">100</span>) &#123;</span><br><span class="line">    results.addAll(hotRecall.search(req));</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 某个特殊打标的商品，强制干掉</span></span><br><span class="line">filterService.filterSensitive(results);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 如果是测试流量，走A模型，否则走B模型</span></span><br><span class="line"><span class="keyword">if</span> (ABTest.isHit(<span class="string">&quot;exp_group_1&quot;</span>, req.getUserId())) &#123;</span><br><span class="line">    modelAScorer.score(results);</span><br><span class="line">&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">    modelBScorer.score(results);</span><br><span class="line">&#125;</span><br><span class="line"><span class="comment">// ......</span></span><br></pre></td></tr></table></figure>
@@ -39,7 +39,7 @@
   </entry>
   <entry>
     <title>物理隔离下的无奈与挣扎：如何优雅地把代码“偷渡”进生产网？</title>
-    <url>/blog-tangjing/blog-tangjing.github.io.git/2025/10/15/%E7%89%A9%E7%90%86%E9%9A%94%E7%A6%BB%E4%B8%8B%E7%9A%84%E6%97%A0%E5%A5%88%E4%B8%8E%E6%8C%A3%E6%89%8E%EF%BC%9A%E5%A6%82%E4%BD%95%E4%BC%98%E9%9B%85%E5%9C%B0%E6%8A%8A%E4%BB%A3%E7%A0%81%E2%80%9C%E5%81%B7%E6%B8%A1%E2%80%9D%E8%BF%9B%E7%94%9F%E4%BA%A7%E7%BD%91%EF%BC%9F/</url>
+    <url>/2025/10/15/%E7%89%A9%E7%90%86%E9%9A%94%E7%A6%BB%E4%B8%8B%E7%9A%84%E6%97%A0%E5%A5%88%E4%B8%8E%E6%8C%A3%E6%89%8E%EF%BC%9A%E5%A6%82%E4%BD%95%E4%BC%98%E9%9B%85%E5%9C%B0%E6%8A%8A%E4%BB%A3%E7%A0%81%E2%80%9C%E5%81%B7%E6%B8%A1%E2%80%9D%E8%BF%9B%E7%94%9F%E4%BA%A7%E7%BD%91%EF%BC%9F/</url>
     <content><![CDATA[<p>在互联网公司搞 DevOps，每天挂在嘴边的词是：GitOps，一键发布，流水线，Kubernetes 滚动重启。这很爽，也很理所当然。</p>
 <p>但直到我有机会参与了一个金融信创背景的项目，我才体会到什么叫“架构师的无奈”。<br>项目的生产环境设立在绝对的内网里——这是真正的 <strong>Air Gap（物理隔离）</strong>。没有外网连接，别说从 Maven 中央仓库拉包了，就连 ssh 登上去敲个 <code>curl</code> 全都是大费周章。办公环境（研发网）和生产环境（生产网）之间横跨着物理网闸（Data Diode）。所有的资料传输，都得通过 U盘、移动硬盘，或者走极其严苛的审批通道用专门的摆渡机。</p>
 <p>在这种环境下，你跟我谈什么高频迭代？能把代码顺利扔上去跑不报错，大家都谢天谢地了。</p>
@@ -79,7 +79,7 @@
   </entry>
   <entry>
     <title>聊聊那个折磨人的需求：在 Spring Boot 里手搓一个热插拔插件系统</title>
-    <url>/blog-tangjing/blog-tangjing.github.io.git/2025/08/18/%E8%81%8A%E8%81%8A%E9%82%A3%E4%B8%AA%E6%8A%98%E7%A3%A8%E4%BA%BA%E7%9A%84%E9%9C%80%E6%B1%82%EF%BC%9A%E5%9C%A8-Spring-Boot-%E9%87%8C%E6%89%8B%E6%90%93%E4%B8%80%E4%B8%AA%E7%83%AD%E6%8F%92%E6%8B%94%E6%8F%92%E4%BB%B6%E7%B3%BB%E7%BB%9F/</url>
+    <url>/2025/08/18/%E8%81%8A%E8%81%8A%E9%82%A3%E4%B8%AA%E6%8A%98%E7%A3%A8%E4%BA%BA%E7%9A%84%E9%9C%80%E6%B1%82%EF%BC%9A%E5%9C%A8-Spring-Boot-%E9%87%8C%E6%89%8B%E6%90%93%E4%B8%80%E4%B8%AA%E7%83%AD%E6%8F%92%E6%8B%94%E6%8F%92%E4%BB%B6%E7%B3%BB%E7%BB%9F/</url>
     <content><![CDATA[<h1 id=""><a href="#" class="headerlink" title=""></a></h1><p>做引擎、搜推这一行，逃不掉的一个宿命就是“无休止的策略迭代”。</p>
 <p>还记得我碰到的一个真实场景：大促前夜，业务方跑过来说，“刚才发现个漏洞，黑灰产在刷量，必须马上把这批用户的权重降级。立刻，马上生效。”<br>按照标准的微服务发布流程：提交代码 -&gt; 走 CI 流水线编译 -&gt; 打 Docker 镜像 -&gt; K8s 滚动发布。就算是一路绿灯，最快也要 15 分钟。但在这种时候，15 分钟的业务损失是难以承受的。</p>
 <p>业务方问：“能不能填个配置，一秒钟生效？”<br>我：“如果是简单的阈值可以，但你这是复杂的过滤+重新查库打分的逻辑，需要写代码的。”</p>

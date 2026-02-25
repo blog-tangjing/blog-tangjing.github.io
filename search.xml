@@ -1,17 +1,121 @@
 <?xml version="1.0" encoding="utf-8"?>
 <search>
   <entry>
-    <title>Hello World</title>
-    <url>/hexo/2026/02/25/Hello-World/</url>
-    <content><![CDATA[<p>欢迎来到我的博客！这是我的第一篇文章。</p>
-<h2 id="关于这个博客"><a href="#关于这个博客" class="headerlink" title="关于这个博客"></a>关于这个博客</h2><p>这个博客使用 Hexo 搭建，主题是 NexT。</p>
-<h2 id="功能特性"><a href="#功能特性" class="headerlink" title="功能特性"></a>功能特性</h2><ul>
-<li>支持评论系统</li>
-<li>搜索功能</li>
-<li>分类和标签</li>
-<li>响应式设计</li>
-</ul>
-<p>希望你喜欢这里的内容！</p>
+    <title>别再写面条代码了：搜广推系统中的动态图编排设计与演进</title>
+    <url>/hexo/2025/09/24/%E5%88%AB%E5%86%8D%E5%86%99%E9%9D%A2%E6%9D%A1%E4%BB%A3%E7%A0%81%E4%BA%86%EF%BC%9A%E6%90%9C%E5%B9%BF%E6%8E%A8%E7%B3%BB%E7%BB%9F%E4%B8%AD%E7%9A%84%E5%8A%A8%E6%80%81%E5%9B%BE%E7%BC%96%E6%8E%92%E8%AE%BE%E8%AE%A1%E4%B8%8E%E6%BC%94%E8%BF%9B/</url>
+    <content><![CDATA[<p>以前做搜索模块，我最怕接手别人留下的代码。</p>
+<p>点开 <code>SearchServiceImpl.java</code>，里面一个 <code>search()</code> 方法一千多行。代码里密密麻麻充斥着这种逻辑：</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line">List&lt;Item&gt; results = <span class="keyword">new</span> <span class="title class_">ArrayList</span>&lt;&gt;();</span><br><span class="line"><span class="comment">// 先搞点向量召回</span></span><br><span class="line">results.addAll(vectorRecall.search(req));</span><br><span class="line"></span><br><span class="line"><span class="comment">// 要是结果不够，再补点热门</span></span><br><span class="line"><span class="keyword">if</span> (results.size() &lt; <span class="number">100</span>) &#123;</span><br><span class="line">    results.addAll(hotRecall.search(req));</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 某个特殊打标的商品，强制干掉</span></span><br><span class="line">filterService.filterSensitive(results);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 如果是测试流量，走A模型，否则走B模型</span></span><br><span class="line"><span class="keyword">if</span> (ABTest.isHit(<span class="string">&quot;exp_group_1&quot;</span>, req.getUserId())) &#123;</span><br><span class="line">    modelAScorer.score(results);</span><br><span class="line">&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">    modelBScorer.score(results);</span><br><span class="line">&#125;</span><br><span class="line"><span class="comment">// ......</span></span><br></pre></td></tr></table></figure>
+
+<p>刚开始觉得挺好懂的，逻辑直白。但随着业务发展，召回源变成了十几个，排序模型三天两头换，偶尔还要做各种大促活动的特殊逻辑插拔。这时候这坨代码就成了一座屎山。每次想加个哪怕是打印日志的逻辑，或者想把串行的两个召回改成并行执行来压低 RT（响应时间），都得小心翼翼地重构，心惊胆战地发版。</p>
+<p>我们陷入了反思：<strong>业务逻辑应该是一张“图”，而不是一段“代码”。</strong></p>
+<h2 id="迷雾中的选型：为什么是-LiteFlow？"><a href="#迷雾中的选型：为什么是-LiteFlow？" class="headerlink" title="迷雾中的选型：为什么是 LiteFlow？"></a>迷雾中的选型：为什么是 LiteFlow？</h2><p>阿里有 TPP，内部自研的强悍执行引擎，大家心生向往。但在开源世界自己搞一套，选型就成了个头疼的事。</p>
+<p>有人提议用 Spring Cloud Data Flow，有人说上 Activiti 工作流引擎。都被我否了。<br>为什么？因为搜推系统的请求是核心在线流量，动辄几百上千 QPS，要求 P99 的延迟不能超过百毫秒。那些传统的工作流引擎为了保证事务和持久化，频繁与数据库交互，太“重”了。我们要的是一个在纯内存中急速流转的<strong>轻量级 DAG（有向无环图）执行引擎</strong>。</p>
+<p>最后我们锁定了 <strong>LiteFlow</strong>。</p>
+<p>它的设计哲学很合胃口：你用 Java 写好一个个原子的、无状态的“算子（节点）”，这就好比你造好了一块块乐高积木。怎么让这些积木拼成一辆车？不在 Java 里写，用它特有的 EL（表达式语法）写在配置里。</p>
+<h2 id="拆解与重组：从代码到蓝图"><a href="#拆解与重组：从代码到蓝图" class="headerlink" title="拆解与重组：从代码到蓝图"></a>拆解与重组：从代码到蓝图</h2><p>我们做了一次痛苦的重构。把原本糅合在一起的方法，强行拆成了几十个独立的 <code>@LiteflowComponent</code> 类。每个类只干一件事：纯召回、纯过滤、纯打分。</p>
+<p>然后，那段一千行的面条代码，变成了一段类似这样的极简 EL 配置（可以存在数据库或 Nacos 里）：</p>
+<figure class="highlight xml"><table><tr><td class="code"><pre><span class="line"><span class="tag">&lt;<span class="name">chain</span> <span class="attr">name</span>=<span class="string">&quot;core_search_chain&quot;</span>&gt;</span></span><br><span class="line">    THEN(</span><br><span class="line">        prepareParams, // 拼装参数</span><br><span class="line">        WHEN(</span><br><span class="line">            vectorRecall,  // 向量召回（并行！）</span><br><span class="line">            hotRecall,     // 热门召回（并行！）</span><br><span class="line">            actionRecall   // 行为召回（并行！）</span><br><span class="line">        ).ignoreError(true), // 就算某个召回挂了，别的继续跑，不影响大局</span><br><span class="line">        </span><br><span class="line">        mergeAndDeduplicate, // 汇总去重</span><br><span class="line">        </span><br><span class="line">        SWITCH(abTestNode).to( // 动态路由</span><br><span class="line">            modelARank, </span><br><span class="line">            modelBRank</span><br><span class="line">        ),</span><br><span class="line">        </span><br><span class="line">        packResponse // 打包返回</span><br><span class="line">    )</span><br><span class="line"><span class="tag">&lt;/<span class="name">chain</span>&gt;</span></span><br></pre></td></tr></table></figure>
+
+<p>这段配置，我们叫它<strong>业务蓝图 (Blueprint)</strong>。</p>
+<p>这样一来，开发团队的职责也清晰了。懂底层的 Java 开发，专门去优化“算子”的性能，搞各种并发控制和连接池；懂业务的策略同学，专门去调整这个“蓝图”，怎么搭积木能让转化率最高。这就叫真正的关注点分离。</p>
+<h2 id="踩坑：并行世界里的“幽灵”问题"><a href="#踩坑：并行世界里的“幽灵”问题" class="headerlink" title="踩坑：并行世界里的“幽灵”问题"></a>踩坑：并行世界里的“幽灵”问题</h2><p>理想很丰满，但现实中踩的坑一点不少。最大的麻烦出在多线程并行上。</p>
+<p>在传统的单线程模式下，我们习惯用 <code>ThreadLocal</code> 传递一些隐式上下文，比如当前用户的 UserID、设备的 traceId 等等。<br>好家伙，在 LiteFlow 里一用 <code>WHEN</code> 关键字，底层直接启了线程池把任务拉平出去跑了。于是，在 <code>vectorRecall</code> 这个算子里一取 <code>ThreadLocal</code>，立马报出 NPT（NullPointerException），因为子线程根本拿不到父线程塞在 ThreadLocal 里的值。</p>
+<p>这就是多线程环境下的上下文丢失问题。</p>
+<p>网上的常规建议是换阿里的 <code>TransmittableThreadLocal</code> (TTL)。TTL 确实是个好东西，能自动做线程拷贝。但在极高频的在线系统中，全链路泛滥使用 ThreadLocal 并不优雅，而且会有隐蔽的内存泄漏风险。</p>
+<p>我们最后定下的架构规约是：<strong>在引擎内部，彻底封杀隐式的上下文传递。</strong> </p>
+<p>我们把参数封装成一个重型的、强类型的 <code>SearchContext</code> 对象。每次流转，LiteFlow 的源码支持我们将这个 Context 显式地当作参数传过每一个算子。通过 <code>this.getContextBean(SearchContext.class)</code> 获取。<br>大家虽然觉得每次都要传个对象有点麻烦，但这规避了极大地调试成本。在多线程编程里，越显式、越“笨”的设计，往往最后证明越靠谱。</p>
+<h2 id="结语"><a href="#结语" class="headerlink" title="结语"></a>结语</h2><p>结合上一篇的“热插拔”架构，现在的我们已经可以做到：<strong>一不发版，二不重启，随时随地调整搜索链路的计算图模型。</strong> </p>
+<p>这是一种掌控感，也是工程架构演进带给业务的真正红利。</p>
+<p>但在一些特殊的业务线，比如我们要向一些金融大客户或保密单位输出这套系统，情况就截然不同了。服务器都在物理隔离（Air Gap）的安全屋里，没有外网，没有 CI&#x2F;CD，不能手填配置，这时候这套花哨的玩法该怎么落地？这又是另一个折磨人的故事了，我们下周接着聊。</p>
 ]]></content>
+      <categories>
+        <category>记录</category>
+      </categories>
+      <tags>
+        <tag>tag1</tag>
+        <tag>tag2</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>物理隔离下的无奈与挣扎：如何优雅地把代码“偷渡”进生产网？</title>
+    <url>/hexo/2025/10/15/%E7%89%A9%E7%90%86%E9%9A%94%E7%A6%BB%E4%B8%8B%E7%9A%84%E6%97%A0%E5%A5%88%E4%B8%8E%E6%8C%A3%E6%89%8E%EF%BC%9A%E5%A6%82%E4%BD%95%E4%BC%98%E9%9B%85%E5%9C%B0%E6%8A%8A%E4%BB%A3%E7%A0%81%E2%80%9C%E5%81%B7%E6%B8%A1%E2%80%9D%E8%BF%9B%E7%94%9F%E4%BA%A7%E7%BD%91%EF%BC%9F/</url>
+    <content><![CDATA[<p>在互联网公司搞 DevOps，每天挂在嘴边的词是：GitOps，一键发布，流水线，Kubernetes 滚动重启。这很爽，也很理所当然。</p>
+<p>但直到我有机会参与了一个金融信创背景的项目，我才体会到什么叫“架构师的无奈”。<br>项目的生产环境设立在绝对的内网里——这是真正的 <strong>Air Gap（物理隔离）</strong>。没有外网连接，别说从 Maven 中央仓库拉包了，就连 ssh 登上去敲个 <code>curl</code> 全都是大费周章。办公环境（研发网）和生产环境（生产网）之间横跨着物理网闸（Data Diode）。所有的资料传输，都得通过 U盘、移动硬盘，或者走极其严苛的审批通道用专门的摆渡机。</p>
+<p>在这种环境下，你跟我谈什么高频迭代？能把代码顺利扔上去跑不报错，大家都谢天谢地了。</p>
+<p>但业务方显然是不管这些的，搜推策略依然要求能够及时响应市场变化进行调整。这种极端场景，倒逼我们设计出了一套跨网闸的 <strong>“配置即代码（Configuration as Code）落地范式”</strong>。我管它叫 <strong>“资产包（Asset Bundle）摆渡机制”</strong>。</p>
+<h2 id="刀耕火种阶段的痛：环境漂移"><a href="#刀耕火种阶段的痛：环境漂移" class="headerlink" title="刀耕火种阶段的痛：环境漂移"></a>刀耕火种阶段的痛：环境漂移</h2><p>一开始我们怎么搞？在公司办公网吭哧吭哧写好代码、调好参数，打包成一个巨大的 <code>xxx.jar</code>。然后拷贝进光盘，经过繁琐的安检带进机房。手动备份原文件，覆盖新文件，再把配置表里的参数改一改，最后重启进程。</p>
+<p>噩梦随之而来。<br>我们在测试环境的 Redis 连接串是 <code>192.168.1.1</code>，运维在机房手动改配置的时候，不小心把生产环境的 <code>10.200.1.1</code> 敲错了，成了 <code>10.200.1.2</code>。服务一启，直接 Connection Refused，生产链路瘫痪。</p>
+<p>这就是臭名昭著的 <strong>环境差异（Environment Drift）</strong> 带来的灾难。再加上物理隔离环境往往缺乏完善的可观测性基础设施，排查这种人为故障简直要命。</p>
+<h2 id="破局：把变量统统剥离"><a href="#破局：把变量统统剥离" class="headerlink" title="破局：把变量统统剥离"></a>破局：把变量统统剥离</h2><p>痛定思痛后，我们下了一条死命令：<strong>交付物里绝对不允许出现任何环境特异性（Environment-specific）的信息。</strong> </p>
+<p>结合我们前两篇文章提到的 Host-Plugin 架构和 LiteFlow 编排，我们将所有的“易变业务逻辑”抽取成一个个独立的插件，把流程配置文件化。我们的最终产物，不是一个完整的可执行程序，而是一个高度浓缩的压缩包（Zip）。</p>
+<p>这个压缩包里包含：</p>
+<ol>
+<li><code>plugin-v2.0.jar</code>：纯粹的业务逻辑二进制包。</li>
+<li><code>dag_flow.json</code>：说明各个算子怎么调用的执行图蓝图。</li>
+<li><code>manifest.yaml</code>：声明这个包依赖的环境要求和对外接口。</li>
+</ol>
+<p>最关键的是，代码里再也不许写 IP 地址或者具体环境配置了。<br>如果你在插件里要访问外部缓存，你只能写 <code>@Resource(name=&quot;main-cache&quot;)</code>，这是一个逻辑标识符。而在隔离的物理生产环境里，部署着雷打不动的基座程序（Host Application），它在启动时就已经读取好了机房本地的配置信息，备好了那些连接池，并且打上了对应的逻辑标签。</p>
+<p>当摆渡包进入生产环境加载时，系统其实是在做一种“晚期绑定（Late Binding）”。插件只管提需求（“我需要一个叫 main-cache 的东西”），基座负责满足它。<strong>代码永远不知道、也不需要知道自己在什么环境下运行。</strong></p>
+<h2 id="引入防呆机制：从“祈祷”到“预演-Dry-Run-”"><a href="#引入防呆机制：从“祈祷”到“预演-Dry-Run-”" class="headerlink" title="引入防呆机制：从“祈祷”到“预演 (Dry Run)”"></a>引入防呆机制：从“祈祷”到“预演 (Dry Run)”</h2><p>以前上了包启动，大家都在心里默默祈祷不出错。如今有了规范的摆渡包体系，我们在后台系统的架构上做了一个重量级的特性：<strong>预发演练（Dry Run）机制</strong>。</p>
+<p>当有人将包含新策略包的 Zip 上传到生产后台系统点击导入时，并不会立刻生效。<br>后台程序会先在内存里开启一个沙盒验证。它会拆开压缩包读取它的 <code>manifest.yaml</code>，开始一项一项核实：</p>
+<ul>
+<li><strong>依赖校验</strong>：你这个版本要求 <code>tf-serving</code> 组件版本&gt;&#x3D;2.0，可是当前基座里的是1.5，对不起，打回，不允许加载。</li>
+<li><strong>连通性校验</strong>：模拟一遍 DAG 的组装图，看看有没有死循环、闭环等低级常识错误。</li>
+<li><strong>安全验签</strong>：根据打包时带入的私钥签名校验 MD5，防止压缩包在复杂的摆渡过程中损坏或被中间人恶意篡改。</li>
+</ul>
+<p>只有当这些前置关卡全绿通过时，系统才会真正触发我们在第一篇里写的那套“无感热加载”流程。</p>
+<h2 id="总结思考"><a href="#总结思考" class="headerlink" title="总结思考"></a>总结思考</h2><p>这种在今天互联网语境下看起来有些古板的交付方式，实际上是被严苛 ToB 环境逼出来的工程化结晶。</p>
+<p>现在回过头看，这不就是一种彻底降阶版、非容器化的的 GitOps 么？我们在做的，本质上就是把基础设施的稳定预期（Host）和上层业务的混沌预期（Plugin+Config），通过一套强契约（Asset Bundle）进行了安全的交接。</p>
+<p>至此，我们的整个搜推中台架构演进告一段落。从打破类加载器的底层 hack 搞定热更，到引入轻量图计算做编排，再到最后去解物理隔离的工程化之结。技术其实没有银弹，它永远是伴随着特定阶段的业务阵痛，相互妥协慢慢生长出来的。</p>
+]]></content>
+      <categories>
+        <category>记录</category>
+      </categories>
+      <tags>
+        <tag>tag1</tag>
+        <tag>tag2</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>聊聊那个折磨人的需求：在 Spring Boot 里手搓一个热插拔插件系统</title>
+    <url>/hexo/2025/08/18/%E8%81%8A%E8%81%8A%E9%82%A3%E4%B8%AA%E6%8A%98%E7%A3%A8%E4%BA%BA%E7%9A%84%E9%9C%80%E6%B1%82%EF%BC%9A%E5%9C%A8-Spring-Boot-%E9%87%8C%E6%89%8B%E6%90%93%E4%B8%80%E4%B8%AA%E7%83%AD%E6%8F%92%E6%8B%94%E6%8F%92%E4%BB%B6%E7%B3%BB%E7%BB%9F/</url>
+    <content><![CDATA[<h1 id=""><a href="#" class="headerlink" title=""></a></h1><p>做引擎、搜推这一行，逃不掉的一个宿命就是“无休止的策略迭代”。</p>
+<p>还记得我碰到的一个真实场景：大促前夜，业务方跑过来说，“刚才发现个漏洞，黑灰产在刷量，必须马上把这批用户的权重降级。立刻，马上生效。”<br>按照标准的微服务发布流程：提交代码 -&gt; 走 CI 流水线编译 -&gt; 打 Docker 镜像 -&gt; K8s 滚动发布。就算是一路绿灯，最快也要 15 分钟。但在这种时候，15 分钟的业务损失是难以承受的。</p>
+<p>业务方问：“能不能填个配置，一秒钟生效？”<br>我：“如果是简单的阈值可以，但你这是复杂的过滤+重新查库打分的逻辑，需要写代码的。”</p>
+<p>这就是典型的矛盾：<strong>我们需要单体应用（Monolith）的运行期高性能，却又极其渴望脚本语言般的秒级发布能力。</strong></p>
+<p>当时我们考察了几个方案。一是上 Groovy 脚本，但事实证明，一旦业务逻辑变复杂，需要注入各种 Spring Bean、调用多个外部 RPC、处理多线程时，Groovy 就显得捉襟见肘，难以维护。二是将策略层无限拆分微服务，但对于一此动辄百 QPS 请求、对延迟 RT 要求极高的核心搜索链路，多一次 RPC 带来的网络开销和序列化成本，是不被允许的。</p>
+<p>最终，我们决定重走一遍阿里 TPP（淘宝个性化平台）趟过的老路：<strong>做基于 Java 核心的 Host-Plugin 宿主插件架构。</strong></p>
+<h2 id="被逼出来的自定义-ClassLoader"><a href="#被逼出来的自定义-ClassLoader" class="headerlink" title="被逼出来的自定义 ClassLoader"></a>被逼出来的自定义 ClassLoader</h2><p>提到热插拔，很多人第一反应是 OSGi。千万别，那玩意太重了，依赖关系搞得人痛不欲生。其实从底层来看，所谓的“代码热替换”，本质上是对类加载机制的操纵。</p>
+<p>Java 的双亲委派模型是为了安全和稳定，保证核心类不被篡改。但这也意味着，只要一个类被 AppClassLoader 加载了，在 JVM 生命周期内你就别想替换它。</p>
+<p>我们要做的第一件事，就是<strong>打破双亲委派</strong>。</p>
+<p>我们需要为每一个业务插件，哪怕是同一个插件的不同版本，分配一个独立的 <code>HotSwapClassLoader</code>。类比一下，这就好比我们给每个插件在 JVM 进程里建了一个独立的“集装箱”。</p>
+<p>很多网上的 Demo 写自定义 ClassLoader，一跑起来满屏的 <code>NoClassDefFoundError</code> 或者 <code>ClassCastException</code>。坑在哪？在于不能全打破。<br>核心基础包（<code>java.*</code>, <code>javax.*</code>, 甚至我们定义在 Host 里的基础接口）<strong>必须</strong>走双亲委派让父加载器加载，否则就会出现“你传过来的 User 对象，跟我加载的 User 对象不是同一个类型”的诡异现象。而真正的业务逻辑类（比如 <code>com.atlas.plugin.*</code>），则必须被我们的自定义加载器拦截下来，强制自己在本地加载。</p>
+<h2 id="Spring-的“禁区”：如何在一个-JVM-里面开个小灶？"><a href="#Spring-的“禁区”：如何在一个-JVM-里面开个小灶？" class="headerlink" title="Spring 的“禁区”：如何在一个 JVM 里面开个小灶？"></a>Spring 的“禁区”：如何在一个 JVM 里面开个小灶？</h2><p>类加载的问题解决了，真正的噩梦在 Spring 这里。<br>业务插件不是光靠纯 Java 代码运行的，它要查 Redis，要调 gRPC 服务，要用各种 <code>@Service</code>。这就意味着，插件里也得有个 Spring 容器。</p>
+<p>但如果你直接在插件里跑一个 Spring Boot，它会试图去读各种环境变量、启动 Tomcat、抢占端口，直接就炸了。</p>
+<p>我们需要的，是在 Host 的 Spring Context 之下，挂靠一个“子 Context”。Spring MVC 的 DispatcherServlet 就是这么干的，我们也可以。</p>
+<p>当一个新的插件 Jar 包传上来，我的 <code>PluginManager</code> 会创建一个轻量级的 <code>AnnotationConfigApplicationContext</code>，并把这个 Context 的 ClassLoader 设置为刚才的 <code>HotSwapClassLoader</code>。最关键的一步，是显式调用 <code>setParent(hostContext)</code>。</p>
+<p>有了这层父子关系，奇迹就发生了。插件里的代码可以肆无忌惮地使用 <code>@Autowired</code> 注入 Host 里的 <code>RedisTemplate</code> 或是 <code>MyBatis Mapper</code>。但反过来，Host 是死活看不到插件里的 Bean 的。这就形成了天然的<strong>单向隔离</strong>——插件随便搞，搞崩了也不会把 Host 整个应用的上下文污染。</p>
+<h2 id="永远跨不过去的坎：Metaspace-OOM"><a href="#永远跨不过去的坎：Metaspace-OOM" class="headerlink" title="永远跨不过去的坎：Metaspace OOM"></a>永远跨不过去的坎：Metaspace OOM</h2><p>如果你只做到了热加载，那是给研发埋了一颗定时炸弹。在生产环境，最惨痛的教训往往是被 Metaspace 撑爆导致的 OOM 甚至进程挂掉。</p>
+<p>“加载”容易，“卸载”极难。<br>Java 没有提供直接卸载 Class 的 API。类的卸载，完全依赖于垃圾回收器认为这个类加载器（ClassLoader）没有任何存活的对象实例指向它。</p>
+<p>在一次压测中，我们连续点击了几十次热更，发现 Metaspace 持续增长，死活不降。用 VisualVM dump 出堆栈一看，头骨发凉：有的引用残留在 Spring 的内部缓存里，有的是因为忘了清 <code>ThreadLocal</code>。</p>
+<p><code>ThreadLocal</code> 就是热部署的克星。只要某个工作线程池里的线程设置了 ThreadLocal，并且 Value 是插件里的对象实例（甚至仅仅是引用了插件的 Class），那么这个线程不死，ClassLoader 就别想被 GC 回收。</p>
+<p>为了填这些坑，我们不得不：</p>
+<ol>
+<li>规范所有插件禁止直接使用原生 ThreadLocal，必须走框架封装的 Context。</li>
+<li>在 Spring 容器 close 触发销毁事件时，利用反射强行清理一些框架的内部缓存（比如 JDK 的 <code>Introspector</code> 和一些 JSON 序列化库的缓存）。</li>
+<li>引入优雅停机（Graceful Shutdown），用读写锁或者引用计数，确保当前正在执行旧版本逻辑的请求全部跑完，再实施卸载。</li>
+</ol>
+<h2 id="后记"><a href="#后记" class="headerlink" title="后记"></a>后记</h2><p>手搓一个热插拔引擎，过程是痛苦的，甚至有很多黑魔法的味道。但做出来的那一刻，看着管理后台点击一个“Upload”，整个业务逻辑瞬间重载，且 QPS 一点没掉，那种成就感是难以言表的。</p>
+<p>这其实不仅仅是一个技术痛点的解决。它本质上，是把基础架构的稳定性和上层业务的敏捷性，进行了解耦。底层修高速公路，上层负责造不同的车。</p>
+<p>但这只是第一步。当你有了十几个热更的插件，怎么把它们串联起来？“第一步做向量召回，第二步看情况做热门兜底，第三步打分，最后根据 AB 测试的流量过不同的模型”。怎么把这些零散的算子粘合起来？<br>这就引出了下一个话题：<strong>业务链路的动态图编排设计</strong>。这个我们下篇再聊。</p>
+]]></content>
+      <categories>
+        <category>记录</category>
+      </categories>
+      <tags>
+        <tag>tag1</tag>
+        <tag>tag2</tag>
+      </tags>
   </entry>
 </search>

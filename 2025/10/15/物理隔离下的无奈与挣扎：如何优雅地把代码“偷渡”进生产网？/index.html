@@ -23,12 +23,12 @@
     var CONFIG = {"hostname":"blog.orzsite.cn","root":"/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":true,"show_result":true,"style":null},"back2top":{"enable":true,"sidebar":true,"scrollpercent":true},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":true,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
   </script>
 
-  <meta name="description" content="在互联网公司搞 DevOps，每天挂在嘴边的词是：GitOps，一键发布，流水线，Kubernetes 滚动重启。这很爽，也很理所当然。 但直到我有机会参与了一个金融信创背景的项目，我才体会到什么叫“架构师的无奈”。项目的生产环境设立在绝对的内网里——这是真正的 Air Gap（物理隔离）。没有外网连接，别说从 Maven 中央仓库拉包了，就连 ssh 登上去敲个 curl 全都是大费周章。办公环">
+  <meta name="description" content="在互联网公司搞 DevOps，每天挂在嘴边的词是：GitOps，一键发布，流水线，Kubernetes 滚动重启。这很爽，也很理所当然。 但是曾经在黄金交易所参与了一个运维监控背景的项目，我才体会到什么叫“架构师的无奈”。项目的生产环境设立在绝对的内网里——这是真正的 Air Gap（物理隔离）。没有外网连接，别说从 Maven 中央仓库拉包了，就连 ssh 登上去敲个 curl 全都是大费周章。">
 <meta property="og:type" content="article">
 <meta property="og:title" content="物理隔离下的无奈与挣扎：如何优雅地把代码“偷渡”进生产网？">
 <meta property="og:url" content="https://blog.orzsite.cn/2025/10/15/%E7%89%A9%E7%90%86%E9%9A%94%E7%A6%BB%E4%B8%8B%E7%9A%84%E6%97%A0%E5%A5%88%E4%B8%8E%E6%8C%A3%E6%89%8E%EF%BC%9A%E5%A6%82%E4%BD%95%E4%BC%98%E9%9B%85%E5%9C%B0%E6%8A%8A%E4%BB%A3%E7%A0%81%E2%80%9C%E5%81%B7%E6%B8%A1%E2%80%9D%E8%BF%9B%E7%94%9F%E4%BA%A7%E7%BD%91%EF%BC%9F/index.html">
 <meta property="og:site_name" content="朝花夕拾">
-<meta property="og:description" content="在互联网公司搞 DevOps，每天挂在嘴边的词是：GitOps，一键发布，流水线，Kubernetes 滚动重启。这很爽，也很理所当然。 但直到我有机会参与了一个金融信创背景的项目，我才体会到什么叫“架构师的无奈”。项目的生产环境设立在绝对的内网里——这是真正的 Air Gap（物理隔离）。没有外网连接，别说从 Maven 中央仓库拉包了，就连 ssh 登上去敲个 curl 全都是大费周章。办公环">
+<meta property="og:description" content="在互联网公司搞 DevOps，每天挂在嘴边的词是：GitOps，一键发布，流水线，Kubernetes 滚动重启。这很爽，也很理所当然。 但是曾经在黄金交易所参与了一个运维监控背景的项目，我才体会到什么叫“架构师的无奈”。项目的生产环境设立在绝对的内网里——这是真正的 Air Gap（物理隔离）。没有外网连接，别说从 Maven 中央仓库拉包了，就连 ssh 登上去敲个 curl 全都是大费周章。">
 <meta property="og:locale" content="zh_CN">
 <meta property="article:published_time" content="2025-10-15T07:15:08.000Z">
 <meta property="article:modified_time" content="2025-02-15T07:15:08.000Z">
@@ -244,9 +244,9 @@
 
       
         <p>在互联网公司搞 DevOps，每天挂在嘴边的词是：GitOps，一键发布，流水线，Kubernetes 滚动重启。这很爽，也很理所当然。</p>
-<p>但直到我有机会参与了一个金融信创背景的项目，我才体会到什么叫“架构师的无奈”。<br>项目的生产环境设立在绝对的内网里——这是真正的 <strong>Air Gap（物理隔离）</strong>。没有外网连接，别说从 Maven 中央仓库拉包了，就连 ssh 登上去敲个 <code>curl</code> 全都是大费周章。办公环境（研发网）和生产环境（生产网）之间横跨着物理网闸（Data Diode）。所有的资料传输，都得通过 U盘、移动硬盘，或者走极其严苛的审批通道用专门的摆渡机。</p>
+<p>但是曾经在黄金交易所参与了一个运维监控背景的项目，我才体会到什么叫“架构师的无奈”。<br>项目的生产环境设立在绝对的内网里——这是真正的 <strong>Air Gap（物理隔离）</strong>。没有外网连接，别说从 Maven 中央仓库拉包了，就连 ssh 登上去敲个 <code>curl</code> 全都是大费周章。办公环境（研发网）和生产环境（生产网）之间横跨着物理网闸（Data Diode）。所有的资料传输，都得通过 U盘、移动硬盘，或者走极其严苛的审批通道用专门的摆渡机。</p>
 <p>在这种环境下，你跟我谈什么高频迭代？能把代码顺利扔上去跑不报错，大家都谢天谢地了。</p>
-<p>但业务方显然是不管这些的，搜推策略依然要求能够及时响应市场变化进行调整。这种极端场景，倒逼我们设计出了一套跨网闸的 <strong>“配置即代码（Configuration as Code）落地范式”</strong>。我管它叫 <strong>“资产包（Asset Bundle）摆渡机制”</strong>。</p>
+<p>但业务方显然是不管这些的，系统业务功能依然要求能够及时响应市场变化进行调整。这种极端场景，倒逼我们设计出了一套跨网闸的 <strong>“配置即代码（Configuration as Code）落地范式”</strong>。我管它叫 <strong>“资产包（Asset Bundle）摆渡机制”</strong>。</p>
 <h2 id="刀耕火种阶段的痛：环境漂移"><a href="#刀耕火种阶段的痛：环境漂移" class="headerlink" title="刀耕火种阶段的痛：环境漂移"></a>刀耕火种阶段的痛：环境漂移</h2><p>一开始我们怎么搞？在公司办公网吭哧吭哧写好代码、调好参数，打包成一个巨大的 <code>xxx.jar</code>。然后拷贝进光盘，经过繁琐的安检带进机房。手动备份原文件，覆盖新文件，再把配置表里的参数改一改，最后重启进程。</p>
 <p>噩梦随之而来。<br>我们在测试环境的 Redis 连接串是 <code>192.168.1.1</code>，运维在机房手动改配置的时候，不小心把生产环境的 <code>10.200.1.1</code> 敲错了，成了 <code>10.200.1.2</code>。服务一启，直接 Connection Refused，生产链路瘫痪。</p>
 <p>这就是臭名昭著的 <strong>环境差异（Environment Drift）</strong> 带来的灾难。再加上物理隔离环境往往缺乏完善的可观测性基础设施，排查这种人为故障简直要命。</p>

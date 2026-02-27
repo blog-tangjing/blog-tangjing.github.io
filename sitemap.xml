@@ -40,7 +40,7 @@
 
   <url>
     <loc>https://blog.orzsite.cn/</loc>
-    <lastmod>2026-02-25</lastmod>
+    <lastmod>2026-02-27</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
@@ -48,14 +48,14 @@
   
   <url>
     <loc>https://blog.orzsite.cn/tags/tag1/</loc>
-    <lastmod>2026-02-25</lastmod>
+    <lastmod>2026-02-27</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>https://blog.orzsite.cn/tags/tag2/</loc>
-    <lastmod>2026-02-25</lastmod>
+    <lastmod>2026-02-27</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
@@ -64,7 +64,7 @@
   
   <url>
     <loc>https://blog.orzsite.cn/categories/%E8%AE%B0%E5%BD%95/</loc>
-    <lastmod>2026-02-25</lastmod>
+    <lastmod>2026-02-27</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
